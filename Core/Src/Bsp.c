@@ -145,8 +145,12 @@ static void Bsp_I2cInit(void)
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
     bsp.hi2c1.Instance = I2C1;
+#if defined(STM32H723xx)
+    bsp.hi2c1.Init.Timing = 0x00901954;
+#else
     bsp.hi2c1.Init.ClockSpeed = dBSP_I2C_CLOCK_SPEED_HZ;
     bsp.hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+#endif
     bsp.hi2c1.Init.OwnAddress1 = 0;
     bsp.hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
     bsp.hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
