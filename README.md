@@ -13,11 +13,14 @@
 
 Este projeto realiza a **estimacao da pose tridimensional (Roll, Pitch e Yaw)** de uma aeronave utilizando **fusao sensorial** entre acelerometro triaxial e giroscopio triaxial (IMU MPU-6050, 6-DOF). Os dados sao processados por um **filtro complementar** em tempo real e apresentados em um display OLED SSD1306 de 128x64 pixels, incluindo uma **animacao gráfica de horizonte artificial** (requisito avancado).
 
-### Caracteristicas do Firmware:
-- **Barramento I²C:** Operando em modo rapido (*Fast Mode* a $400\text{ kHz}$) com pull-ups integrados nos modulos.
-- **Leitura em Burst:** 14 registradores continuos lidos em uma unica transacao I²C (reduz overhead de barramento).
-- **Taxa de Amostragem do Filtro:** $100\text{ Hz}$ ($\Delta t = 10\text{ ms}$).
-- **Taxa de Atualizacao do Display:** $10\text{ Hz}$ (decimacao por 10 para evitar sobrecarga do barramento I²C).
+### Requisito Avançado Atendido: Animação Gráfica do Horizonte Artificial
+Conforme solicitado nos requisitos avançados do roteiro:
+1. **Representação Gráfica Contínua:** Além de exibir os valores numéricos de aceleração linear, velocidade angular e ângulos de Euler (Roll, Pitch e Yaw), o display OLED renderiza um **Horizonte Artificial Aeronáutico (*Attitude Indicator*)**.
+2. **Dinâmica do Horizonte:**
+   - A linha de referência inclina proporcionalmente ao ângulo de **Roll** ($\phi$).
+   - O centro de referência desloca-se verticalmente proporcionalmente ao ângulo de **Pitch** ($\theta$).
+   - Um marcador central em cruz (*crosshair*) simboliza a aeronave/placa em relação ao solo.
+3. **Taxa de Quadros Suave (10 FPS):** Atualização periódica a 10 Hz desacoplada da taxa do filtro (100 Hz), permitindo animação fluida sem sobrecarregar o barramento I²C.
 
 ---
 
