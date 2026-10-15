@@ -21,15 +21,16 @@ Este projeto realiza a **estimacao da pose tridimensional (Roll, Pitch e Yaw)** 
 
 ---
 
-## 2. Pinagem de Conexao
+## 2. Pinagem de Conexão
 
-| Modulo MPU-6050 | Display OLED SSD1306 | Pino STM32 | Funcao |
-| :---: | :---: | :---: | :--- |
-| `VCC` | `VCC` / `VDD` | `3.3V` | Alimentacao compartilhada |
-| `GND` | `GND` | `GND` | Referencia de terra comum |
-| `SCL` | `SCL` / `SCK` | `PB6` | `I2C1_SCL` (Clock com pull-up) |
-| `SDA` | `SDA` | `PB7` | `I2C1_SDA` (Dados com pull-up) |
-| `AD0` -> `GND` | - | - | Fixa o endereco I²C do MPU em `0x68` |
+| Módulo / Periférico | Black Pill (F411) | STM32H723 | Nucleo-F767ZI | Conexão / Função |
+| :--- | :---: | :---: | :---: | :--- |
+| **VCC / VDD**        | `3.3V` | `3.3V` | `3.3V` | Alimentação dos módulos |
+| **GND**              | `GND`  | `GND`  | `GND`  | Referência de terra comum |
+| **I2C SCL**          | `PB6`  | `PB6`  | `PB6`  | `I2C1_SCL` (Clock com pull-up de 4.7k) |
+| **I2C SDA**          | `PB7`  | `PB7`  | `PB7`  | `I2C1_SDA` (Dados com pull-up de 4.7k) |
+| **MPU-6050 AD0**     | `GND`  | `GND`  | `GND`  | Fixa o endereço I²C do MPU em `0x68` |
+| **LED Heartbeat**    | `PC13` | `PC13` | `PB0`  | Indicador visual de ciclo de leitura |
 
 ---
 
