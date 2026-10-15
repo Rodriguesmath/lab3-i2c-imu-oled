@@ -32,6 +32,11 @@ Este projeto realiza a **estimacao da pose tridimensional (Roll, Pitch e Yaw)** 
 | **MPU-6050 AD0**     | `GND`  | `GND`  | `GND`  | Fixa o endereço I²C do MPU em `0x68` |
 | **LED Heartbeat**    | `PC13` | `PC13` | `PB0`  | Indicador visual de ciclo de leitura |
 
+### Diagrama Esquemático do Circuito
+![Esquemático I2C MPU6050 e OLED](Docs/esquematico_circuito.png)
+
+> O arquivo vetorial completo está disponível em: [Esquematico_Placa3_I2C_MPU6050_OLED.pdf](Docs/Esquematico_Placa3_I2C_MPU6050_OLED.pdf)
+
 ---
 
 ## 3. Equacoes de Fusao Sensorial (Filtro Complementar)

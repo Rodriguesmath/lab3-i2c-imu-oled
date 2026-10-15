@@ -1,0 +1,16 @@
+# STM32CubeIDE build artifacts
+Debug/
+Release/
+*.launch
+.settings/language.settings.xml
+
+# Temporary files & object files
+*.o
+*.d
+*.su
+*.map
+*.elf
+*.bin
+*.hex
+*~
+.DS_Store
