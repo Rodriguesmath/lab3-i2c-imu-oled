@@ -217,6 +217,11 @@ void Ssd1306_PrintString(u8 x, u8 y, const char *pStr)
     while(*pStr)
     {
         char c = *pStr++;
+        if((c >= 'a') && (c <= 'z'))
+        {
+            c -= ('a' - 'A');
+        }
+
         if((c >= ' ') && (c <= 'Z'))
         {
             u8 index = c - ' ';
