@@ -28,11 +28,15 @@
  ******************************************************************************/
 bool Ssd1306_Init(void);
 void Ssd1306_Clear(void);
-void Ssd1306_UpdateScreen(void);
-void Ssd1306_DrawPixel(u8 x, u8 y, bool state);
-void Ssd1306_DrawLine(u8 x0, u8 y0, u8 x1, u8 y1, bool state);
+bool Ssd1306_UpdateScreen(void); /* Bloqueante: somente na inicializacao. */
+bool Ssd1306_UpdateScreenStep(void); /* Envia no maximo uma pagina. */
+bool Ssd1306_IsBusy(void);
+bool Ssd1306_ShowMessage(const char *pMessage);
+void Ssd1306_DrawPixel(s16 x, s16 y, bool state);
+void Ssd1306_DrawLine(s16 x0, s16 y0, s16 x1, s16 y1, bool state);
 void Ssd1306_PrintString(u8 x, u8 y, const char *pStr);
-void Ssd1306_RenderDashboard(const mpu6050Data_t *pImu, const pose_t *pPose);
+bool Ssd1306_RenderDashboard(const mpu6050Data_t *pImu, const pose_t *pPose,
+                             bool telemetryPage, bool dataValid);
 
 #endif /* _SSD1306_H_ */
 /** @} DOXYGEN GROUP TAG END OF FILE */

@@ -97,12 +97,14 @@ static struct
 {
     u8   buffer[dSSD1306_BUFFER_SIZE];
     bool isReady;
+    bool updatePending;
+    u8 nextPage;
 } ssd1306;
 
 /*******************************************************************************
  * PROTOTIPOS LOCAIS
  ******************************************************************************/
-static void Ssd1306_WriteCommand(u8 cmd);
+static bool Ssd1306_WriteCommand(u8 cmd);
 
 /*******************************************************************************
  * FUNCOES PUBLICAS
@@ -110,40 +112,26 @@ static void Ssd1306_WriteCommand(u8 cmd);
 
 bool Ssd1306_Init(void)
 {
-    // Sequencia padrao de inicializacao do display OLED SSD1306 128x64
-    Ssd1306_WriteCommand(0xAE); // Display OFF
-    Ssd1306_WriteCommand(0x20); // Set Memory Addressing Mode
-    Ssd1306_WriteCommand(0x00); // Horizontal Addressing Mode
-    Ssd1306_WriteCommand(0xB0); // Set Page Start Address
-    Ssd1306_WriteCommand(0xC8); // Set COM Output Scan Direction
-    Ssd1306_WriteCommand(0x00); // Set low column address
-    Ssd1306_WriteCommand(0x10); // Set high column address
-    Ssd1306_WriteCommand(0x40); // Set start line address
-    Ssd1306_WriteCommand(0x81); // Set contrast control
-    Ssd1306_WriteCommand(0xFF);
-    Ssd1306_WriteCommand(0xA1); // Set segment re-map
-    Ssd1306_WriteCommand(0xA6); // Normal display
-    Ssd1306_WriteCommand(0xA8); // Set multiplex ratio(1 to 64)
-    Ssd1306_WriteCommand(0x3F); // 1/64 duty
-    Ssd1306_WriteCommand(0xA4); // Output follows RAM content
-    Ssd1306_WriteCommand(0xD3); // Set display offset
-    Ssd1306_WriteCommand(0x00);
-    Ssd1306_WriteCommand(0xD5); // Set display clock divide ratio/oscillator frequency
-    Ssd1306_WriteCommand(0xF0);
-    Ssd1306_WriteCommand(0xD9); // Set pre-charge period
-    Ssd1306_WriteCommand(0x22);
-    Ssd1306_WriteCommand(0xDA); // Set com pins hardware configuration
-    Ssd1306_WriteCommand(0x12);
-    Ssd1306_WriteCommand(0xDB); // Set vcomh
-    Ssd1306_WriteCommand(0x20);
-    Ssd1306_WriteCommand(0x8D); // Set DC-DC enable
-    Ssd1306_WriteCommand(0x14);
-    Ssd1306_WriteCommand(0xAF); // Display ON
-
-    Ssd1306_Clear();
-    Ssd1306_UpdateScreen();
+    // Modo PAGINA: comandos B0..B7 e endereco de coluna usados no envio.
+    static const u8 commands[] = {
+        0xAE, 0x20, 0x02, 0xB0, 0xC8, 0x00, 0x10, 0x40,
+        0x81, 0xFF, 0xA1, 0xA6, 0xA8, 0x3F, 0xA4,
+        0xD3, 0x00, 0xD5, 0xF0, 0xD9, 0x22, 0xDA, 0x12,
+        0xDB, 0x20, 0x8D, 0x14, 0xAF
+    };
+    ssd1306.isReady = false;
+    ssd1306.updatePending = false;
+    for(u16 i = 0; i < sizeof(commands); i++)
+    {
+        if(!Ssd1306_WriteCommand(commands[i])) return false;
+    }
     ssd1306.isReady = true;
-
+    Ssd1306_Clear();
+    if(!Ssd1306_UpdateScreen())
+    {
+        ssd1306.isReady = false;
+        return false;
+    }
     return true;
 }
 
@@ -152,20 +140,51 @@ void Ssd1306_Clear(void)
     memset(ssd1306.buffer, 0, dSSD1306_BUFFER_SIZE);
 }
 
-void Ssd1306_UpdateScreen(void)
+bool Ssd1306_IsBusy(void)
 {
-    for(u8 m = 0; m < 8; m++)
-    {
-        Ssd1306_WriteCommand(0xB0 + m);
-        Ssd1306_WriteCommand(0x00);
-        Ssd1306_WriteCommand(0x10);
-        Bsp_I2cMemWrite(dSSD1306_I2C_ADDR, dDATA_MODE, &ssd1306.buffer[dSSD1306_WIDTH * m], dSSD1306_WIDTH);
-    }
+    return ssd1306.updatePending;
 }
 
-void Ssd1306_DrawPixel(u8 x, u8 y, bool state)
+bool Ssd1306_UpdateScreenStep(void)
 {
-    if((x >= dSSD1306_WIDTH) || (y >= dSSD1306_HEIGHT))
+    if(!ssd1306.isReady) return false;
+    if(!ssd1306.updatePending) return true;
+    u8 page = ssd1306.nextPage;
+    if(!Ssd1306_WriteCommand(0xB0 + page) ||
+       !Ssd1306_WriteCommand(0x00) || !Ssd1306_WriteCommand(0x10) ||
+       !Bsp_I2cMemWrite(dSSD1306_I2C_ADDR, dDATA_MODE,
+                        &ssd1306.buffer[dSSD1306_WIDTH * page], dSSD1306_WIDTH))
+    {
+        ssd1306.updatePending = false;
+        return false;
+    }
+    if(++ssd1306.nextPage == 8) ssd1306.updatePending = false;
+    return true;
+}
+
+bool Ssd1306_UpdateScreen(void)
+{
+    if(!ssd1306.isReady) return false;
+    ssd1306.nextPage = 0;
+    ssd1306.updatePending = true;
+    while(ssd1306.updatePending)
+    {
+        if(!Ssd1306_UpdateScreenStep()) return false;
+    }
+    return true;
+}
+
+bool Ssd1306_ShowMessage(const char *pMessage)
+{
+    if(!ssd1306.isReady || ssd1306.updatePending) return false;
+    Ssd1306_Clear();
+    Ssd1306_PrintString(0, 20, pMessage);
+    return Ssd1306_UpdateScreen();
+}
+
+void Ssd1306_DrawPixel(s16 x, s16 y, bool state)
+{
+    if((x < 0) || (y < 0) || (x >= dSSD1306_WIDTH) || (y >= dSSD1306_HEIGHT))
     {
         return;
     }
@@ -180,18 +199,18 @@ void Ssd1306_DrawPixel(u8 x, u8 y, bool state)
     }
 }
 
-void Ssd1306_DrawLine(u8 x0, u8 y0, u8 x1, u8 y1, bool state)
+void Ssd1306_DrawLine(s16 x0, s16 y0, s16 x1, s16 y1, bool state)
 {
-    s16 dx = abs(x1 - x0);
+    s32 dx = abs(x1 - x0);
     s16 sx = x0 < x1 ? 1 : -1;
-    s16 dy = -abs(y1 - y0);
+    s32 dy = -abs(y1 - y0);
     s16 sy = y0 < y1 ? 1 : -1;
-    s16 err = dx + dy;
-    s16 e2;
+    s32 err = dx + dy;
+    s32 e2;
 
     while(1)
     {
-        Ssd1306_DrawPixel((u8)x0, (u8)y0, state);
+        Ssd1306_DrawPixel(x0, y0, state);
         if((x0 == x1) && (y0 == y1))
         {
             break;
@@ -239,74 +258,152 @@ void Ssd1306_PrintString(u8 x, u8 y, const char *pStr)
     }
 }
 
-void Ssd1306_RenderDashboard(const mpu6050Data_t *pImu, const pose_t *pPose)
+static void Ssd1306_Rect(s16 x0, s16 y0, s16 x1, s16 y1, bool fill, bool state)
 {
-    Ssd1306_Clear();
-
-    // 1. ANIMACAO DE POSE (Horizonte Artificial no lado esquerdo do display)
-    // Circulo delimitador do indicador de atitude
-    u8 cx = 24;
-    u8 cy = 32;
-    u8 radius = 18;
-
-    // Calcula inclinacao da linha do horizonte a partir do Roll e Pitch
-    float rad = (pPose->rollDeg * 3.14159f) / 180.0f;
-    float pitchOffset = pPose->pitchDeg * 0.4f;
-
-    s16 x0 = cx - (s16)(radius * cosf(rad));
-    s16 y0 = cy - (s16)(radius * sinf(rad)) + (s16)pitchOffset;
-    s16 x1 = cx + (s16)(radius * cosf(rad));
-    s16 y1 = cy + (s16)(radius * sinf(rad)) + (s16)pitchOffset;
-
-    // Limita coordenadas na tela
-    if(y0 < 2)  y0 = 2;
-    if(y0 > 62) y0 = 62;
-    if(y1 < 2)  y1 = 2;
-    if(y1 > 62) y1 = 62;
-
-    Ssd1306_DrawLine((u8)x0, (u8)y0, (u8)x1, (u8)y1, true);
-
-    // Marcador central fixo da aeronave
-    Ssd1306_DrawLine(cx - 4, cy, cx + 4, cy, true);
-    Ssd1306_DrawPixel(cx, cy - 2, true);
-
-    // Divisoria vertical
-    Ssd1306_DrawLine(48, 0, 48, 63, true);
-
-    // 2. EXIBICAO NUMERICA DE ENGENHARIA (Lado direito)
-    char str[20];
-
-    // Angulos do Filtro Complementar
-    snprintf(str, sizeof(str), "R:%4.0f", pPose->rollDeg);
-    Ssd1306_PrintString(52, 2, str);
-
-    snprintf(str, sizeof(str), "P:%4.0f", pPose->pitchDeg);
-    Ssd1306_PrintString(52, 12, str);
-
-    snprintf(str, sizeof(str), "Y:%4.0f", pPose->yawDeg);
-    Ssd1306_PrintString(52, 22, str);
-
-    // Aceleracao Linear XYZ (g)
-    snprintf(str, sizeof(str), "A:%+.1f,%+.1f", pImu->accelXG, pImu->accelYG);
-    Ssd1306_PrintString(52, 34, str);
-
-    snprintf(str, sizeof(str), "Z:%+.1f g", pImu->accelZG);
-    Ssd1306_PrintString(52, 44, str);
-
-    // Giroscopio (graus/s)
-    snprintf(str, sizeof(str), "W:%4.0f", pImu->gyroZDps);
-    Ssd1306_PrintString(52, 54, str);
-
-    Ssd1306_UpdateScreen();
+    if(fill)
+    {
+        for(s16 y = y0; y <= y1; y++)
+            for(s16 x = x0; x <= x1; x++) Ssd1306_DrawPixel(x, y, state);
+    }
+    else
+    {
+        Ssd1306_DrawLine(x0, y0, x1, y0, state);
+        Ssd1306_DrawLine(x0, y1, x1, y1, state);
+        Ssd1306_DrawLine(x0, y0, x0, y1, state);
+        Ssd1306_DrawLine(x1, y0, x1, y1, state);
+    }
 }
 
-/*******************************************************************************
- * FUNCOES LOCAIS
- ******************************************************************************/
-
-static void Ssd1306_WriteCommand(u8 cmd)
+static void Ssd1306_DrawHeading(const pose_t *pose)
 {
-    Bsp_I2cMemWrite(dSSD1306_I2C_ADDR, dCMD_MODE, &cmd, 1);
+    char text[8];
+    Ssd1306_DrawLine(0, 53, 127, 53, true);
+    if(pose->yawValid)
+    {
+        // Escala circular: 359 -> 000 sem salto de coordenadas.
+        float heading = fmodf(pose->yawDeg + 360.0f, 360.0f);
+        int base = (int)floorf(heading / 10.0f) * 10;
+        for(int mark = base - 70; mark <= base + 70; mark += 10)
+        {
+            int x = 64 + (int)lroundf((float)mark - heading);
+            if(x < 0 || x > 127 || (x >= 43 && x <= 85)) continue;
+            Ssd1306_DrawLine(x, 54, x, (mark % 30 == 0) ? 56 : 55, true);
+            if(mark % 30 == 0 && x >= 9 && x <= 118)
+            {
+                int degrees = (mark % 360 + 360) % 360;
+                snprintf(text, sizeof(text), "%03d", degrees);
+                Ssd1306_PrintString((u8)(x - 8), 57, text);
+            }
+        }
+        int degrees = ((int)lroundf(heading)) % 360;
+        snprintf(text, sizeof(text), "%03dR", degrees);
+    }
+    else snprintf(text, sizeof(text), "---R");
+    Ssd1306_Rect(44, 54, 83, 63, true, false);
+    Ssd1306_Rect(44, 54, 83, 63, false, true);
+    Ssd1306_PrintString(52, 56, text);
+    Ssd1306_DrawLine(62, 51, 64, 53, true);
+    Ssd1306_DrawLine(66, 51, 64, 53, true);
+}
+
+static void Ssd1306_DrawAttitude(const pose_t *pose, bool gyroPage)
+{
+    float w = pose->q[0], x = pose->q[1], y = pose->q[2], z = pose->q[3];
+    float gx = 2.0f*(x*z - w*y);
+    float gy = 2.0f*(y*z + w*x);
+    float gz = 1.0f - 2.0f*(x*x + y*y);
+    float edge = 0.6f * sqrtf(gy*gy + gz*gz);
+    // Plano do horizonte projetado diretamente da gravidade do quaternion.
+    // Nao usa tan(pitch), Euler congelado ou clamp de extremos da reta.
+    // h>0 indica solo; invertido, o solo passa continuamente para cima.
+    for(s16 row = 11; row <= 50; row++)
+    {
+        float h = gz * (row - 30) + gy * (34 - 64) + 20.0f * gx;
+        for(s16 col = 34; col <= 94; col++, h += gy)
+        {
+            bool ground = h > 0.0f && ((col + row) & 3) == 0;
+            bool horizon = edge > 0.0001f && fabsf(h) <= edge;
+            Ssd1306_DrawPixel(col, row, ground || horizon);
+        }
+    }
+    Ssd1306_DrawLine(32, 11, 32, 51, true);
+    Ssd1306_DrawLine(96, 11, 96, 51, true);
+    // Marcas fixas de banco em -60, -30, 0, 30, 60 graus.
+    for(int angle = -60; angle <= 60; angle += 30)
+    {
+        float rad = angle * 0.01745329252f;
+        s16 x0 = 64 + (s16)lroundf(17*sinf(rad));
+        s16 y0 = 30 - (s16)lroundf(17*cosf(rad));
+        s16 x1 = 64 + (s16)lroundf(19*sinf(rad));
+        s16 y1 = 30 - (s16)lroundf(19*cosf(rad));
+        Ssd1306_DrawLine(x0, y0, x1, y1, true);
+    }
+    // Aeronave fixa com fundo limpo, legivel sobre ceu e solo pontilhado.
+    Ssd1306_Rect(53, 28, 75, 34, true, false);
+    Ssd1306_DrawLine(55, 30, 61, 30, true);
+    Ssd1306_DrawLine(67, 30, 73, 30, true);
+    Ssd1306_DrawLine(61, 30, 64, 33, true);
+    Ssd1306_DrawLine(64, 33, 67, 30, true);
+    const char *status = !pose->yawValid ? "VERT" : (gz < -0.15f) ? "INV" : NULL;
+    if(status)
+    {
+        Ssd1306_Rect(50, 18, 78, 25, true, false);
+        Ssd1306_PrintString(52, 18, status);
+    }
+    Ssd1306_Rect(44, 43, 86, 50, true, false);
+    Ssd1306_PrintString(50, 43, gyroPage ? "W D/S" : "A G");
+}
+
+bool Ssd1306_RenderDashboard(const mpu6050Data_t *pImu, const pose_t *pPose,
+                             bool telemetryPage, bool dataValid)
+{
+    if(!ssd1306.isReady || ssd1306.updatePending || !pImu || !pPose) return false;
+    Ssd1306_Clear();
+    if(!dataValid)
+    {
+        Ssd1306_PrintString(20, 18, "IMU ERROR");
+        Ssd1306_PrintString(20, 32, "DATA STALE");
+    }
+    else if(!pPose->isAligned)
+    {
+        Ssd1306_PrintString(20, 24, "ATT WAIT");
+    }
+    else
+    {
+        char text[32];
+        // Faixa superior alterna os seis eixos sem retirar o painel de voo.
+        if(telemetryPage)
+            snprintf(text, sizeof(text), "WX%+04.0f WY%+04.0f WZ%+04.0f",
+                     (double)pImu->gyroXDps, (double)pImu->gyroYDps, (double)pImu->gyroZDps);
+        else
+            snprintf(text, sizeof(text), "AX%+.1f AY%+.1f AZ%+.1f",
+                     (double)pImu->accelXG, (double)pImu->accelYG, (double)pImu->accelZG);
+        Ssd1306_PrintString(0, 0, text);
+        Ssd1306_DrawLine(0, 9, 127, 9, true);
+        Ssd1306_DrawAttitude(pPose, telemetryPage);
+        Ssd1306_PrintString(0, 12, "ROLL");
+        if(pPose->yawValid) snprintf(text, sizeof(text), "%+04.0f", (double)pPose->rollDeg);
+        else snprintf(text, sizeof(text), " -- ");
+        Ssd1306_PrintString(0, 22, text);
+        Ssd1306_PrintString(103, 12, "PIT");
+        snprintf(text, sizeof(text), "%+03.0f", (double)pPose->pitchDeg);
+        Ssd1306_PrintString(103, 22, text);
+        Ssd1306_PrintString(0, 35, "NZ");
+        snprintf(text, sizeof(text), "%+.1f", (double)pImu->accelZG);
+        Ssd1306_PrintString(0, 45, text);
+        Ssd1306_PrintString(103, 35, "WZ");
+        snprintf(text, sizeof(text), "%+04.0f", (double)pImu->gyroZDps);
+        Ssd1306_PrintString(103, 45, text);
+        Ssd1306_DrawHeading(pPose);
+    }
+    ssd1306.nextPage = 0;
+    ssd1306.updatePending = true;
+    return true;
+}
+
+static bool Ssd1306_WriteCommand(u8 cmd)
+{
+    return Bsp_I2cMemWrite(dSSD1306_I2C_ADDR, dCMD_MODE, &cmd, 1);
 }
 
 /** @} DOXYGEN GROUP TAG END OF FILE */

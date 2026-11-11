@@ -29,6 +29,11 @@ typedef struct
     float pitchDeg;
     float yawDeg;
     float alpha;
+    bool  isAligned;
+    bool  yawValid; /* Heading indefinido perto de Pitch +/-90 graus. */
+    float q[4]; /* Quaternion unitario w,x,y,z; sensor -> mundo. */
+    float tiltMismatchS;
+    u32 tiltRecoveries;
 } pose_t;
 
 /*******************************************************************************

@@ -15,32 +15,37 @@
 #include "Mpu6050.h"
 #include "Ssd1306.h"
 
-/* Private defines -----------------------------------------------------------*/
-#define dSAMPLE_INTERVAL_MS       10    // 100 Hz de taxa de amostragem
-#define dDISPLAY_DECIMATION       10    // Atualiza a tela a cada 10 amostras (10 Hz)
-#define dDT_SECONDS               0.01f // 100 Hz -> dt = 0.01s
+/* Periodos independentes: aquisicao prioritária, OLED por paginas. */
+#define dSAMPLE_INTERVAL_MS       10U
+#define dDISPLAY_INTERVAL_MS      100U
+#define dOLED_BUDGET_MS           6U
+#define dPAGE_INTERVAL_MS         2000U
 
-/* Private variables ---------------------------------------------------------*/
+typedef struct
+{
+    u32 signature;
+    u32 samples;
+    u32 imuErrors;
+    u32 oledErrors;
+    u32 frames;
+    u32 missedDeadlines;
+    u32 maxSampleIntervalMs;
+    u32 calibrationAttempts;
+} appDiagnostics_t;
+
+/* Disponivel ao debugger para verificar o firmware e a temporizacao. */
+volatile appDiagnostics_t appDiagnostics = {.signature = 0x49324334UL};
 static mpu6050Data_t imuData;
-static pose_t        aircraftPose;
+static pose_t aircraftPose;
 
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
 int main(void)
 {
-    /* Inicializacao do Hardware de baixo nivel */
     Bsp_Init();
-
-    /* USER CODE BEGIN 2 */
-    // Inicializa MPU-6050 e Display OLED SSD1306 no barramento I2C
-    bool mpuOk = Mpu6050_Init();
     bool oledOk = Ssd1306_Init();
-
-    if((mpuOk == false) || (oledOk == false))
+    bool mpuOk = Mpu6050_Init();
+    if(!mpuOk || !oledOk)
     {
-        // Se houver falha de comunicacao, pisca rapidamente o LED
+        if(oledOk) (void)Ssd1306_ShowMessage("IMU INIT ERROR");
         while(1)
         {
             Bsp_LedToggle();
@@ -48,51 +53,106 @@ int main(void)
         }
     }
 
-    // Inicializa o Filtro Complementar com fator alfa = 0.98
+    // Nao aceita silenciosamente uma janela de calibracao com movimento.
+    do
+    {
+        (void)Ssd1306_ShowMessage("KEEP STILL - CAL");
+        appDiagnostics.calibrationAttempts++;
+        mpuOk = Mpu6050_CalibrateGyro();
+        if(!mpuOk)
+        {
+            (void)Ssd1306_ShowMessage("CAL RETRY - STILL");
+            Bsp_LedToggle();
+            HAL_Delay(500);
+        }
+    } while(!mpuOk);
+
     ComplementaryFilter_Init(&aircraftPose, dFILTER_DEFAULT_ALPHA);
+    u32 nextSample = HAL_GetTick();
+    u32 nextDisplay = nextSample;
+    u32 pageEpoch = nextSample;
+    u32 lastSample = nextSample;
+    u32 lastHeartbeat = nextSample;
+    bool previousValid = false;
+    bool dataValid = false;
 
-    u8 displayDecimationCounter = 0;
-    /* USER CODE END 2 */
-
-    /* Infinite loop */
-    /* USER CODE BEGIN WHILE */
     while(1)
     {
-        u32 loopStartTime = HAL_GetTick();
-
-        // 1. Leitura dos 14 registradores do MPU-6050 em modo burst
-        if(Mpu6050_ReadSensor(&imuData) == true)
+        u32 now = HAL_GetTick();
+        if((s32)(now - nextSample) >= 0)
         {
-            // 2. Atualizacao da pose (Roll, Pitch, Yaw) via filtro complementar
-            ComplementaryFilter_Update(&aircraftPose, &imuData, dDT_SECONDS);
+            // Timestamp do inicio de cada leitura; aritmetica suporta wrap do tick.
+            u32 sampleTime = now;
+            if(Mpu6050_ReadSensor(&imuData))
+            {
+                u32 interval = sampleTime - lastSample;
+                if(previousValid && interval > appDiagnostics.maxSampleIntervalMs)
+                    appDiagnostics.maxSampleIntervalMs = interval;
+                float dt = previousValid ? (float)interval * 0.001f : 0.0f;
+                // Nao integra uma lacuna longa como se o movimento fosse conhecido.
+                if(interval > 100U) dt = 0.0f;
+                ComplementaryFilter_Update(&aircraftPose, &imuData, dt);
+                lastSample = sampleTime;
+                previousValid = true;
+                dataValid = true;
+                appDiagnostics.samples++;
+            }
+            else
+            {
+                previousValid = false;
+                dataValid = false;
+                appDiagnostics.imuErrors++;
+            }
+            nextSample += dSAMPLE_INTERVAL_MS;
+            now = HAL_GetTick();
+            if((s32)(now - nextSample) >= 0)
+            {
+                appDiagnostics.missedDeadlines++;
+                nextSample = now + dSAMPLE_INTERVAL_MS;
+            }
         }
 
-        // 3. Atualizacao do Dashboard no OLED a cada 100 ms (10 Hz)
-        displayDecimationCounter++;
-        if(displayDecimationCounter >= dDISPLAY_DECIMATION)
+        now = HAL_GetTick();
+        if((s32)(now - nextDisplay) >= 0 && !Ssd1306_IsBusy() &&
+           (s32)(nextSample - now) >= (s32)dOLED_BUDGET_MS)
         {
-            displayDecimationCounter = 0;
-            Ssd1306_RenderDashboard(&imuData, &aircraftPose);
+            bool telemetry = (((now - pageEpoch) / dPAGE_INTERVAL_MS) & 1U) != 0;
+            if(!Ssd1306_RenderDashboard(&imuData, &aircraftPose, telemetry, dataValid))
+            {
+                oledOk = false;
+                appDiagnostics.oledErrors++;
+            }
+            nextDisplay += dDISPLAY_INTERVAL_MS;
+            if((s32)(now - nextDisplay) >= 0) nextDisplay = now + dDISPLAY_INTERVAL_MS;
+        }
+
+        now = HAL_GetTick();
+        if(Ssd1306_IsBusy() && (s32)(nextSample - now) >= (s32)dOLED_BUDGET_MS)
+        {
+            if(!Ssd1306_UpdateScreenStep())
+            {
+                oledOk = false;
+                appDiagnostics.oledErrors++;
+            }
+            else if(!Ssd1306_IsBusy())
+            {
+                oledOk = true;
+                appDiagnostics.frames++;
+            }
+        }
+
+        now = HAL_GetTick();
+        if(now - lastHeartbeat >= ((dataValid && oledOk) ? 500U : 100U))
+        {
             Bsp_LedToggle();
+            lastHeartbeat = now;
         }
-
-        // Aguarda proximo periodo de 10 ms (100 Hz)
-        u32 elapsed = HAL_GetTick() - loopStartTime;
-        if(elapsed < dSAMPLE_INTERVAL_MS)
-        {
-            HAL_Delay(dSAMPLE_INTERVAL_MS - elapsed);
-        }
-        /* USER CODE END WHILE */
-
-        /* USER CODE BEGIN 3 */
+        HAL_Delay(1);
     }
-    /* USER CODE END 3 */
 }
 
 void Error_Handler(void)
 {
     __disable_irq();
-    while(1)
-    {
-    }
+    while(1) {}
 }

@@ -59,6 +59,8 @@ typedef struct
  ******************************************************************************/
 bool Mpu6050_Init(void);
 bool Mpu6050_ReadSensor(mpu6050Data_t *pData);
+/* Manter a montagem parada por cerca de 2 segundos. */
+bool Mpu6050_CalibrateGyro(void);
 void Mpu6050_Sleep(void);
 void Mpu6050_Wakeup(void);
 

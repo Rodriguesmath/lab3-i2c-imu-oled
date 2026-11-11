@@ -16,3 +16,7 @@ Drivers/
 *.hex
 *~
 .DS_Store
+
+# Backups locais da Flash (preservados por make clean)
+Backups/
+output/
