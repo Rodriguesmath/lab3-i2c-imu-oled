@@ -73,24 +73,24 @@ git checkout board/stm32h723vgt6
 
 ```mermaid
 flowchart TD
-    subgraph APP["Camada de Aplicacao e Escalonamento"]
-        MAIN["main.c (Superloop Deterministico 100 Hz + Diagnostico)"]
+    subgraph Camada_Aplicacao
+        MAIN["main.c - Superloop Deterministico 100 Hz e Diagnostico"]
     end
 
-    subgraph DOMAIN["Camada de Dominio e Perifericos"]
-        CF["ComplementaryFilter.c (Quaternion + Mahony + Euler)"]
-        MPU["Mpu6050.c (Burst Read 14B + Calibracao de Bias)"]
-        OLED["Ssd1306.c (PFD Vetorial + Framebuffer 1KB Paginado)"]
+    subgraph Camada_Dominio_e_Drivers
+        CF["ComplementaryFilter.c - Quaternion, Mahony e Euler"]
+        MPU["Mpu6050.c - Burst Read 14 Bytes e Calibracao de Bias"]
+        OLED["Ssd1306.c - PFD Vetorial e Framebuffer 1 KB Paginado"]
     end
 
-    subgraph BSP_LAYER["Board Support Package (Isolamento de Hardware)"]
-        BSP["Bsp.c / Bsp.h (Clock Tree, GPIO Open-Drain, I2C1 400 kHz)"]
+    subgraph Camada_BSP
+        BSP["Bsp.c e Bsp.h - Clock Tree, GPIO Open-Drain e I2C1 400 kHz"]
     end
 
-    subgraph HAL_LAYER["Camada STM32Cube HAL e CMSIS Device"]
-        F4["STM32F4xx HAL (board/stm32f411ceu6)"]
-        F7["STM32F7xx HAL (board/nucleo-f767zi)"]
-        H7["STM32H7xx HAL (board/stm32h723vgt6)"]
+    subgraph Camada_HAL_CMSIS
+        F4["STM32F4xx HAL - branch board-stm32f411ceu6"]
+        F7["STM32F7xx HAL - branch board-nucleo-f767zi"]
+        H7["STM32H7xx HAL - branch board-stm32h723vgt6"]
     end
 
     MAIN --> CF
